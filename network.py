@@ -95,7 +95,28 @@ class NetworkPacket:
         return self(dst_addr, prot_S, data_S)
     
 
-    
+class RouteMessage:
+    @classmethod
+    def to_byte_S(cls, table):
+        data = ""
+        destinations = table.keys()
+        for dest in destinations:
+            for inf in table[dest].keys():
+                data += str(dest) + "," + str(inf) + "," + str(table[dest][inf]) + ","
+        return data[:-1]
+
+    @classmethod
+    def from_byte_S(cls, data):
+        table = {}
+        parts = data.split(",")
+        group = []
+        for i in parts:
+            group.append(i)
+            if len(group) == 3:
+                # 3 items, we can build a dictionary value
+                table[int(group[0])] = {int(group[1]): int(group[2])}
+                group.clear()
+        return table
 
 ## Implements a network host for receiving and transmitting data
 class Host:
@@ -196,12 +217,44 @@ class Router:
         #TODO: add logic to update the routing tables and
         # possibly send out routing updates
         print('%s: Received routing update %s from interface %d' % (self, p, i))
+        receivedTable = RouteMessage.from_byte_S(p.data_S)
+        print("%s: Got table: %s" % (self, receivedTable))
+        updated = False
+        for dest in receivedTable.keys():
+            if dest in self.rt_tbl_D:
+                minNCost = 99999999999
+                for inf in receivedTable[dest].keys():
+                    if receivedTable[dest][inf] < minNCost:
+                        minNCost = receivedTable[dest][inf]
+                #Check if we have a route on this interface
+                if i in self.rt_tbl_D[dest]:
+                    #We have one here. Check if their best route is cheaper than the one on this interface.
+                    if self.rt_tbl_D[dest][i] > minNCost:
+                        #Theirs is better. Update ours.
+                        updated = True
+                        self.rt_tbl_D[dest][i] = minNCost
+                else:
+                    #We don't have an entry for this. Add it.
+                    updated = True
+                    self.rt_tbl_D[dest][i] = minNCost
+
+            else:
+                # This destination doesn't exist in our own table. Lets add all of its values.
+                for inf in receivedTable[dest].keys():
+                    updated = True
+                    # Use i as our own interface, cost is the cost of the neighbors route + our interface cost.
+                    self.rt_tbl_D[dest] = {i: receivedTable[dest][inf] + self.intf_L[inf].cost}
+        if updated:
+            for inf in range(len(self.intf_L)):
+                self.send_routes(i)
         
     ## send out route update
     # @param i Interface number on which to send out a routing update
     def send_routes(self, i):
+        d = RouteMessage.to_byte_S(self.rt_tbl_D)
+
         # a sample route update packet
-        p = NetworkPacket(0, 'control', 'Sample routing table packet')
+        p = NetworkPacket(0, 'control', d)
         try:
             #TODO: add logic to send out a route update
             print('%s: sending routing update "%s" from interface %d' % (self, p, i))
