@@ -218,7 +218,7 @@ class Router:
         # possibly send out routing updates
         print('%s: Received routing update %s from interface %d' % (self, p, i))
         receivedTable = RouteMessage.from_byte_S(p.data_S)
-        print("%s: Got table: %s" % (self, receivedTable))
+        print("%s: Received routing table from interface %d: %s" % (self, i, receivedTable))
         updated = False
         for dest in receivedTable.keys():
             if dest in self.rt_tbl_D:
@@ -246,6 +246,7 @@ class Router:
                     self.rt_tbl_D[dest] = {i: receivedTable[dest][inf] + self.intf_L[inf].cost}
         if updated:
             for inf in range(len(self.intf_L)):
+                print("%s: Routes were updated. Sending new table to all interfaces." % self)
                 self.send_routes(i)
         
     ## send out route update
@@ -291,7 +292,7 @@ class Router:
             print()
         print()
         # Currently the function just prints the route table as a dictionary
-        print(self.rt_tbl_D)
+        #print(self.rt_tbl_D)
 
     ## thread target for the host to keep forwarding data
     def run(self):
