@@ -5,6 +5,7 @@ Created on Oct 12, 2016
 '''
 import queue
 import threading
+import time
 
 
 ## wrapper class for a queue of packets
@@ -205,8 +206,24 @@ class Router:
             # TODO: Here you will need to implement a lookup into the 
             # forwarding table to find the appropriate outgoing interface
             # for now we assume the outgoing interface is (i+1)%2
-            self.intf_L[(i+1)%2].put(p.to_byte_S(), 'out', True)
-            print('%s: forwarding packet "%s" from interface %d to %d' % (self, p, i, (i+1)%2))
+            while(True):
+            # Check if we have a route to that host.
+                if int(p.dst_addr) in self.rt_tbl_D:
+                    minInf = -1
+                    minCost = 999999
+                    for inf in self.rt_tbl_D[int(p.dst_addr)].keys():
+                        if self.rt_tbl_D[int(p.dst_addr)][inf] < minCost:
+                            minCost = self.rt_tbl_D[int(p.dst_addr)][inf]
+                            minInf = inf
+                    #Send the packet on the shortest route.
+                    self.intf_L[minInf].put(p.to_byte_S(), 'out', True)
+                    print('%s: forwarding packet "%s" from interface %d to %d' % (self, p, i, minInf))
+                    break
+                else:
+                    print('%s: No route exists to host %s. Dropping packet.' % (self, int(p.dst_addr)))
+                    break
+            #self.intf_L[(i+1)%2].put(p.to_byte_S(), 'out', True)
+
         except queue.Full:
             print('%s: packet "%s" lost on interface %d' % (self, p, i))
             pass
@@ -220,6 +237,8 @@ class Router:
         receivedTable = RouteMessage.from_byte_S(p.data_S)
         print("%s: Received routing table from interface %d: %s" % (self, i, receivedTable))
         updated = False
+        old = self.rt_tbl_D.copy()
+
         for dest in receivedTable.keys():
             if dest in self.rt_tbl_D:
                 minNCost = 99999999999
@@ -229,24 +248,25 @@ class Router:
                 #Check if we have a route on this interface
                 if i in self.rt_tbl_D[dest]:
                     #We have one here. Check if their best route is cheaper than the one on this interface.
-                    if self.rt_tbl_D[dest][i] > minNCost:
+                    if self.rt_tbl_D[dest][i] > minNCost + self.intf_L[i].cost:
                         #Theirs is better. Update ours.
                         updated = True
-                        self.rt_tbl_D[dest][i] = minNCost
+                        #Route cost adds the cost of our link.
+                        self.rt_tbl_D[dest][i] = minNCost + self.intf_L[i].cost
                 else:
                     #We don't have an entry for this. Add it.
                     updated = True
-                    self.rt_tbl_D[dest][i] = minNCost
+                    self.rt_tbl_D[dest][i] = minNCost + self.intf_L[i].cost
 
             else:
                 # This destination doesn't exist in our own table. Lets add all of its values.
                 for inf in receivedTable[dest].keys():
                     updated = True
                     # Use i as our own interface, cost is the cost of the neighbors route + our interface cost.
-                    self.rt_tbl_D[dest] = {i: receivedTable[dest][inf] + self.intf_L[inf].cost}
+                    self.rt_tbl_D[dest] = {i: receivedTable[dest][inf] + self.intf_L[i].cost}
         if updated:
+            print("%s: Routes were updated from %s to %s Sending new table to all interfaces." % (self, old, self.rt_tbl_D))
             for inf in range(len(self.intf_L)):
-                print("%s: Routes were updated. Sending new table to all interfaces." % self)
                 self.send_routes(i)
         
     ## send out route update
