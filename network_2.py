@@ -268,7 +268,8 @@ class Router:
             print("%s: Routes were updated from %s to %s Sending new table to all interfaces." % (self, old, self.rt_tbl_D))
             for inf in range(len(self.intf_L)):
                 self.send_routes(inf)
-        
+        else:
+            print("%s: Routes were unchanged. Recieved %s, current is %s." % (self, receivedTable, self.rt_tbl_D))
     ## send out route update
     # @param i Interface number on which to send out a routing update
     def send_routes(self, i):
